@@ -1,292 +1,106 @@
-# Chatbot UI
+# AdCraft AI 🚀
+<p align="center">
 
-The open-source AI chat app for everyone.
+<img width="1920" height="848" alt="1" src="https://github.com/user-attachments/assets/70feb092-4224-4896-9a5e-c41811c1395a" />
 
-<img src="./public/readme/screenshot.png" alt="Chatbot UI" width="600">
+</p>
 
-## Demo
+**AI-Powered Text Ad Generation Platform**
 
-View the latest demo [here](https://x.com/mckaywrigley/status/1738273242283151777?s=20).
+AdCraft AI is an open-source chat-based platform for generating professional advertising copy using Google Gemini and Stability AI. Built for marketers, copywriters, and businesses who want to create high-quality ads in seconds.
 
-## Updates
+---
 
-Hey everyone! I've heard your feedback and am working hard on a big update.
+## ✨ Features
 
-Things like simpler deployment, better backend compatibility, and improved mobile layouts are on their way.
+- 🤖 **AI Text Ad Generation** — Generate compelling ad copy for Google Ads, Facebook Ads, Instagram, and more
+- 🎨 **Image Generation** — Create stunning ad visuals using Stability AI
+- 🔄 **Multi-Model Support** — Switch between Gemini 2.0 Flash, Gemini 2.5 Flash, Gemini 2.5 Pro
+- 💬 **Chat Interface** — Intuitive chat-based workflow for ad creation
+- 📁 **Workspace Management** — Organize your ad campaigns in separate workspaces
+- 📝 **Prompt Library** — Save and reuse your best ad generation prompts
+- 🌙 **Dark/Light Mode** — Clean UI for any environment
+- 🔐 **Secure Auth** — Supabase authentication and data storage
 
-Be back soon.
+---
 
--- Mckay
+## 🛠️ Tech Stack
 
-## Official Hosted Version
+- **Frontend**: Next.js 14, React, TailwindCSS
+- **Backend**: Supabase (PostgreSQL + Auth)
+- **AI Models**: Google Gemini 2.0/2.5, Stability AI
+- **Deployment**: Vercel
 
-Use Chatbot UI without having to host it yourself!
+---
 
-Find the official hosted version of Chatbot UI [here](https://chatbotui.com).
+## 🚀 Quick Start
 
-## Sponsor
-
-If you find Chatbot UI useful, please consider [sponsoring](https://github.com/sponsors/mckaywrigley) me to support my open-source work :)
-
-## Issues
-
-We restrict "Issues" to actual issues related to the codebase.
-
-We're getting excessive amounts of issues that amount to things like feature requests, cloud provider issues, etc.
-
-If you are having issues with things like setup, please refer to the "Help" section in the "Discussions" tab above.
-
-Issues unrelated to the codebase will likely be closed immediately.
-
-## Discussions
-
-We highly encourage you to participate in the "Discussions" tab above!
-
-Discussions are a great place to ask questions, share ideas, and get help.
-
-Odds are if you have a question, someone else has the same question.
-
-## Legacy Code
-
-Chatbot UI was recently updated to its 2.0 version.
-
-The code for 1.0 can be found on the `legacy` branch.
-
-## Updating
-
-In your terminal at the root of your local Chatbot UI repository, run:
-
+### 1. Clone the repository
 ```bash
-npm run update
+git clone https://github.com/YOUR_USERNAME/adcraft-ai.git
+cd adcraft-ai
 ```
 
-If you run a hosted instance you'll also need to run:
-
-```bash
-npm run db-push
-```
-
-to apply the latest migrations to your live database.
-
-## Local Quickstart
-
-Follow these steps to get your own Chatbot UI instance running locally.
-
-You can watch the full video tutorial [here](https://www.youtube.com/watch?v=9Qq3-7-HNgw).
-
-### 1. Clone the Repo
-
-```bash
-git clone https://github.com/mckaywrigley/chatbot-ui.git
-```
-
-### 2. Install Dependencies
-
-Open a terminal in the root directory of your local Chatbot UI repository and run:
-
+### 2. Install dependencies
 ```bash
 npm install
 ```
 
-### 3. Install Supabase & Run Locally
+### 3. Configure environment variables
 
-#### Why Supabase?
+Create a `.env.local` file:
+```env
+# Supabase
+NEXT_PUBLIC_SUPABASE_URL=your_supabase_url
+NEXT_PUBLIC_SUPABASE_ANON_KEY=your_supabase_anon_key
+SUPABASE_SERVICE_ROLE_KEY=your_service_role_key
 
-Previously, we used local browser storage to store data. However, this was not a good solution for a few reasons:
+# Google Gemini
+GOOGLE_GEMINI_API_KEY=your_gemini_api_key
 
-- Security issues
-- Limited storage
-- Limits multi-modal use cases
-
-We now use Supabase because it's easy to use, it's open-source, it's Postgres, and it has a free tier for hosted instances.
-
-We will support other providers in the future to give you more options.
-
-#### 1. Install Docker
-
-You will need to install Docker to run Supabase locally. You can download it [here](https://docs.docker.com/get-docker) for free.
-
-#### 2. Install Supabase CLI
-
-**MacOS/Linux**
-
-```bash
-brew install supabase/tap/supabase
+# Stability AI
+STABILITY_API_KEY=your_stability_api_key
 ```
 
-**Windows**
-
+### 4. Run locally
 ```bash
-scoop bucket add supabase https://github.com/supabase/scoop-bucket.git
-scoop install supabase
+npm run dev
 ```
 
-#### 3. Start Supabase
+Open [http://localhost:3000](http://localhost:3000)
 
-In your terminal at the root of your local Chatbot UI repository, run:
+---
 
-```bash
-supabase start
+## ☁️ Deploy on Vercel
+
+1. Push your code to GitHub
+2. Go to [https://vercel.com](https://vercel.com) and import your repo
+3. Add environment variables in Vercel project settings
+4. Click **Deploy**
+
+---
+
+## 🔑 API Keys
+
+| Service | Link | Free Tier |
+|---|---|---|
+| Google Gemini | [aistudio.google.com/apikey](https://aistudio.google.com/apikey) | ✅ Yes |
+| Stability AI | [platform.stability.ai](https://platform.stability.ai/account/keys) | ✅ 25 credits |
+| Supabase | [supabase.com](https://supabase.com) | ✅ Yes |
+
+---
+
+## 💡 How to Use
+
+1. **Sign up** and create your workspace
+2. **Select a model** — Gemini for text ads, Stability AI for images
+3. **Describe your ad** with product, audience, platform and tone
+4. **Generate** multiple ad variations instantly
+5. **Refine** by chatting with the AI
+6. **Save** your best prompts for reuse
+
+### Example Prompts
 ```
-
-### 4. Fill in Secrets
-
-#### 1. Environment Variables
-
-In your terminal at the root of your local Chatbot UI repository, run:
-
-```bash
-cp .env.local.example .env.local
+Write 3 Google Ads headlines for a fitness app targeting busy professionals aged 25-40.
+Tone: motivational. Character limit: 30 per headline.
 ```
-
-Get the required values by running:
-
-```bash
-supabase status
-```
-
-Note: Use `API URL` from `supabase status` for `NEXT_PUBLIC_SUPABASE_URL`
-
-Now go to your `.env.local` file and fill in the values.
-
-If the environment variable is set, it will disable the input in the user settings.
-
-#### 2. SQL Setup
-
-In the 1st migration file `supabase/migrations/20240108234540_setup.sql` you will need to replace 2 values with the values you got above:
-
-- `project_url` (line 53): `http://supabase_kong_chatbotui:8000` (default) can remain unchanged if you don't change your `project_id` in the `config.toml` file
-- `service_role_key` (line 54): You got this value from running `supabase status`
-
-This prevents issues with storage files not being deleted properly.
-
-### 5. Install Ollama (optional for local models)
-
-Follow the instructions [here](https://github.com/jmorganca/ollama#macos).
-
-### 6. Run app locally
-
-In your terminal at the root of your local Chatbot UI repository, run:
-
-```bash
-npm run chat
-```
-
-Your local instance of Chatbot UI should now be running at [http://localhost:3000](http://localhost:3000). Be sure to use a compatible node version (i.e. v18).
-
-You can view your backend GUI at [http://localhost:54323/project/default/editor](http://localhost:54323/project/default/editor).
-
-## Hosted Quickstart
-
-Follow these steps to get your own Chatbot UI instance running in the cloud.
-
-Video tutorial coming soon.
-
-### 1. Follow Local Quickstart
-
-Repeat steps 1-4 in "Local Quickstart" above.
-
-You will want separate repositories for your local and hosted instances.
-
-Create a new repository for your hosted instance of Chatbot UI on GitHub and push your code to it.
-
-### 2. Setup Backend with Supabase
-
-#### 1. Create a new project
-
-Go to [Supabase](https://supabase.com/) and create a new project.
-
-#### 2. Get Project Values
-
-Once you are in the project dashboard, click on the "Project Settings" icon tab on the far bottom left.
-
-Here you will get the values for the following environment variables:
-
-- `Project Ref`: Found in "General settings" as "Reference ID"
-
-- `Project ID`: Found in the URL of your project dashboard (Ex: https://supabase.com/dashboard/project/<YOUR_PROJECT_ID>/settings/general)
-
-While still in "Settings" click on the "API" text tab on the left.
-
-Here you will get the values for the following environment variables:
-
-- `Project URL`: Found in "API Settings" as "Project URL"
-
-- `Anon key`: Found in "Project API keys" as "anon public"
-
-- `Service role key`: Found in "Project API keys" as "service_role" (Reminder: Treat this like a password!)
-
-#### 3. Configure Auth
-
-Next, click on the "Authentication" icon tab on the far left.
-
-In the text tabs, click on "Providers" and make sure "Email" is enabled.
-
-We recommend turning off "Confirm email" for your own personal instance.
-
-#### 4. Connect to Hosted DB
-
-Open up your repository for your hosted instance of Chatbot UI.
-
-In the 1st migration file `supabase/migrations/20240108234540_setup.sql` you will need to replace 2 values with the values you got above:
-
-- `project_url` (line 53): Use the `Project URL` value from above
-- `service_role_key` (line 54): Use the `Service role key` value from above
-
-Now, open a terminal in the root directory of your local Chatbot UI repository. We will execute a few commands here.
-
-Login to Supabase by running:
-
-```bash
-supabase login
-```
-
-Next, link your project by running the following command with the "Project ID" you got above:
-
-```bash
-supabase link --project-ref <project-id>
-```
-
-Your project should now be linked.
-
-Finally, push your database to Supabase by running:
-
-```bash
-supabase db push
-```
-
-Your hosted database should now be set up!
-
-### 3. Setup Frontend with Vercel
-
-Go to [Vercel](https://vercel.com/) and create a new project.
-
-In the setup page, import your GitHub repository for your hosted instance of Chatbot UI. Within the project Settings, in the "Build & Development Settings" section, switch Framework Preset to "Next.js".
-
-In environment variables, add the following from the values you got above:
-
-- `NEXT_PUBLIC_SUPABASE_URL`
-- `NEXT_PUBLIC_SUPABASE_ANON_KEY`
-- `SUPABASE_SERVICE_ROLE_KEY`
-- `NEXT_PUBLIC_OLLAMA_URL` (only needed when using local Ollama models; default: `http://localhost:11434`)
-
-You can also add API keys as environment variables.
-
-- `OPENAI_API_KEY`
-- `AZURE_OPENAI_API_KEY`
-- `AZURE_OPENAI_ENDPOINT`
-- `AZURE_GPT_45_VISION_NAME`
-
-For the full list of environment variables, refer to the '.env.local.example' file. If the environment variables are set for API keys, it will disable the input in the user settings.
-
-Click "Deploy" and wait for your frontend to deploy.
-
-Once deployed, you should be able to use your hosted instance of Chatbot UI via the URL Vercel gives you.
-
-## Contributing
-
-We are working on a guide for contributing.
-
-## Contact
-
-Message Mckay on [Twitter/X](https://twitter.com/mckaywrigley)
