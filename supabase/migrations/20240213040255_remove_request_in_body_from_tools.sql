@@ -1,0 +1,4 @@
+-- ALTER TABLE --
+
+ALTER TABLE tools
+DROP COLUMN IF EXISTS request_in_body;

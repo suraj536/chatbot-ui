@@ -1,0 +1,87 @@
+--------------- PROMPTS ---------------
+
+-- TABLE --
+
+CREATE TABLE IF NOT EXISTS prompts (
+    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+
+    user_id UUID NOT NULL REFERENCES auth.users(id) ON DELETE CASCADE,
+    folder_id UUID REFERENCES folders(id) ON DELETE SET NULL,
+
+    created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMPTZ,
+
+    sharing TEXT NOT NULL DEFAULT 'private',
+
+    content TEXT NOT NULL CHECK (char_length(content) <= 100000),
+    name TEXT NOT NULL CHECK (char_length(name) <= 100)
+);
+
+-- INDEXES (safe)
+
+CREATE INDEX IF NOT EXISTS prompts_user_id_idx ON prompts(user_id);
+
+-- RLS --
+
+ALTER TABLE prompts ENABLE ROW LEVEL SECURITY;
+
+DROP POLICY IF EXISTS "Allow full access to own prompts" ON prompts;
+CREATE POLICY "Allow full access to own prompts"
+ON prompts
+USING (user_id = auth.uid())
+WITH CHECK (user_id = auth.uid());
+
+DROP POLICY IF EXISTS "Allow view access to non-private prompts" ON prompts;
+CREATE POLICY "Allow view access to non-private prompts"
+ON prompts FOR SELECT
+USING (sharing <> 'private');
+
+-- TRIGGERS (safe)
+
+DROP TRIGGER IF EXISTS update_prompts_updated_at ON prompts;
+
+CREATE TRIGGER update_prompts_updated_at
+BEFORE UPDATE ON prompts
+FOR EACH ROW
+EXECUTE PROCEDURE update_updated_at_column();
+
+
+--------------- PROMPT WORKSPACES ---------------
+
+-- TABLE --
+
+CREATE TABLE IF NOT EXISTS prompt_workspaces (
+    user_id UUID NOT NULL REFERENCES auth.users(id) ON DELETE CASCADE,
+    prompt_id UUID NOT NULL REFERENCES prompts(id) ON DELETE CASCADE,
+    workspace_id UUID NOT NULL REFERENCES workspaces(id) ON DELETE CASCADE,
+
+    PRIMARY KEY(prompt_id, workspace_id),
+
+    created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMPTZ
+);
+
+-- INDEXES (safe)
+
+CREATE INDEX IF NOT EXISTS prompt_workspaces_user_id_idx ON prompt_workspaces(user_id);
+CREATE INDEX IF NOT EXISTS prompt_workspaces_prompt_id_idx ON prompt_workspaces(prompt_id);
+CREATE INDEX IF NOT EXISTS prompt_workspaces_workspace_id_idx ON prompt_workspaces(workspace_id);
+
+-- RLS --
+
+ALTER TABLE prompt_workspaces ENABLE ROW LEVEL SECURITY;
+
+DROP POLICY IF EXISTS "Allow full access to own prompt_workspaces" ON prompt_workspaces;
+CREATE POLICY "Allow full access to own prompt_workspaces"
+ON prompt_workspaces
+USING (user_id = auth.uid())
+WITH CHECK (user_id = auth.uid());
+
+-- TRIGGERS (safe)
+
+DROP TRIGGER IF EXISTS update_prompt_workspaces_updated_at ON prompt_workspaces;
+
+CREATE TRIGGER update_prompt_workspaces_updated_at
+BEFORE UPDATE ON prompt_workspaces 
+FOR EACH ROW 
+EXECUTE PROCEDURE update_updated_at_column();
