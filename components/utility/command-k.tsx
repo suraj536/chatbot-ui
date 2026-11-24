@@ -10,7 +10,7 @@ interface CommandKProps {}
 export const CommandK: FC<CommandKProps> = ({}) => {
   useHotkey("k", () => setIsOpen(prevState => !prevState))
 
-  const { profile } = useContext(ChatbotUIContext)
+  const { profile, envKeyMap, chatSettings } = useContext(ChatbotUIContext)
 
   const [isOpen, setIsOpen] = useState(false)
   const [value, setValue] = useState("")
@@ -23,7 +23,8 @@ export const CommandK: FC<CommandKProps> = ({}) => {
     const response = await fetch("/api/command", {
       method: "POST",
       body: JSON.stringify({
-        input: value
+        input: value,
+        model: chatSettings?.model
       })
     })
 
@@ -43,11 +44,15 @@ export const CommandK: FC<CommandKProps> = ({}) => {
 
   if (!profile) return null
 
+  const hasApiKey =
+    Boolean(profile.openai_api_key || envKeyMap?.["openai"]) ||
+    Boolean(profile.google_gemini_api_key || envKeyMap?.["google"])
+
   return (
     isOpen && (
       <Dialog open={isOpen} onOpenChange={setIsOpen}>
         <DialogContent onKeyDown={handleKeyDown}>
-          {profile.openai_api_key ? (
+          {hasApiKey ? (
             <div className="space-y-2">
               <div>{content}</div>
 
@@ -78,7 +83,7 @@ export const CommandK: FC<CommandKProps> = ({}) => {
               </div>
             </div>
           ) : (
-            <div>Add your OpenAI API key in the settings to unlock CMD+K.</div>
+            <div>Add your OpenAI or Google Gemini API key in the settings to unlock CMD+K.</div>
           )}
         </DialogContent>
       </Dialog>

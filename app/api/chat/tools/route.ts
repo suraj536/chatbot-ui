@@ -17,10 +17,20 @@ export async function POST(request: Request) {
   try {
     const profile = await getServerProfile()
 
-    checkApiKey(profile.openai_api_key, "OpenAI")
+    const openaiApiKey =
+      profile.openai_api_key || process.env.OPENAI_API_KEY || ""
+
+    if (!openaiApiKey) {
+      return new Response(
+        JSON.stringify({
+          message: "Custom tools currently require an OpenAI key."
+        }),
+        { status: 400, headers: { "Content-Type": "application/json" } }
+      )
+    }
 
     const openai = new OpenAI({
-      apiKey: profile.openai_api_key || "",
+      apiKey: openaiApiKey,
       organization: profile.openai_organization_id
     })
 
