@@ -209,11 +209,9 @@ function adaptSingleMessageForGoogleGemini(message: any) {
     }
   }
 
-  let role = 'user'
-  if(["user", "system"].includes(message.role)) {
-    role = 'user'
-  } else if(message.role === 'assistant') {
-    role = 'model'
+  let role = message.role
+  if (message.role === "assistant") {
+    role = "model"
   }
 
   return {
