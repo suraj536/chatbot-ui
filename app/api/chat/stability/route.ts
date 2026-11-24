@@ -1,4 +1,4 @@
-import { getServerProfile } from "@/lib/server/server-chat-helpers"
+import { checkApiKey, getServerProfile } from "@/lib/server/server-chat-helpers"
 
 export const runtime = "edge"
 
@@ -8,11 +8,9 @@ export async function POST(request: Request) {
 
   try {
     const profile = await getServerProfile()
-    const apiKey = (profile as any).stability_api_key
+    const apiKey = profile.stability_api_key || process.env.STABILITY_API_KEY || ""
 
-    if (!apiKey) {
-      throw new Error("Missing Stability AI API Key")
-    }
+    checkApiKey(apiKey, "Stability AI")
 
     const lastMessage = messages[messages.length - 1]
     const prompt = lastMessage?.content || ""

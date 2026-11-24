@@ -117,7 +117,7 @@ export const ProfileSettings: FC<ProfileSettingsProps> = ({}) => {
     profile?.openrouter_api_key || ""
   )
   const [stabilityAPIKey, setStabilityAPIKey] = useState(
-    (profile as any)?.stability_api_key || ""
+    profile?.stability_api_key || ""
   )
 
   const handleSignOut = async () => {
@@ -159,7 +159,8 @@ export const ProfileSettings: FC<ProfileSettingsProps> = ({}) => {
       azure_openai_45_turbo_id: azureOpenai45TurboID,
       azure_openai_45_vision_id: azureOpenai45VisionID,
       azure_openai_embeddings_id: azureEmbeddingsID,
-      openrouter_api_key: openrouterAPIKey
+      openrouter_api_key: openrouterAPIKey,
+      stability_api_key: stabilityAPIKey
     })
 
     setProfile(updatedProfile)
@@ -185,8 +186,6 @@ export const ProfileSettings: FC<ProfileSettingsProps> = ({}) => {
         providerKey = "google_gemini_api_key"
       } else if (provider === "azure") {
         providerKey = "azure_openai_api_key"
-      } else if (provider === "stability") {
-        providerKey = "openrouter_api_key" as keyof typeof profile
       } else {
         providerKey = `${provider}_api_key` as keyof typeof profile
       }
@@ -195,10 +194,7 @@ export const ProfileSettings: FC<ProfileSettingsProps> = ({}) => {
       const envKeyActive = envKeyMap[provider]
 
       if (!envKeyActive) {
-        const hasApiKey =
-          provider === "stability"
-            ? !!stabilityAPIKey
-            : !!updatedProfile[providerKey]
+        const hasApiKey = !!updatedProfile[providerKey]
 
         if (provider === "openrouter") {
           if (hasApiKey && availableOpenRouterModels.length === 0) {
