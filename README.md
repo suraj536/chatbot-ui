@@ -62,6 +62,8 @@ GOOGLE_GEMINI_API_KEY=your_gemini_api_key
 STABILITY_API_KEY=your_stability_api_key
 ```
 
+> **Note on Storage Deletions**: For automated cleanup of deleted storage assets in Supabase, see [supabase/README.md](supabase/README.md) to configure the service role secret via Supabase Vault or database settings.
+
 ### 4. Run locally
 ```bash
 npm run dev
