@@ -1,13 +1,20 @@
 import { LLMID } from "@/types"
 
-type ChatSettingLimits = {
+export type ChatSettingLimits = {
   MIN_TEMPERATURE: number
   MAX_TEMPERATURE: number
   MAX_TOKEN_OUTPUT_LENGTH: number
   MAX_CONTEXT_LENGTH: number
 }
 
-export const CHAT_SETTING_LIMITS: Record<LLMID, ChatSettingLimits> = {
+export const DEFAULT_CHAT_SETTING_LIMITS: ChatSettingLimits = {
+  MIN_TEMPERATURE: 0.0,
+  MAX_TEMPERATURE: 1.0,
+  MAX_TOKEN_OUTPUT_LENGTH: 4096,
+  MAX_CONTEXT_LENGTH: 4096
+}
+
+const RAW_CHAT_SETTING_LIMITS: Record<LLMID, ChatSettingLimits> = {
   // ANTHROPIC MODELS
   "claude-2.1": {
     MIN_TEMPERATURE: 0.0,
@@ -48,6 +55,30 @@ export const CHAT_SETTING_LIMITS: Record<LLMID, ChatSettingLimits> = {
 
   // GOOGLE MODELS
   
+  "gemini-2.0-flash": {
+    MIN_TEMPERATURE: 0.0,
+    MAX_TEMPERATURE: 2.0,
+    MAX_TOKEN_OUTPUT_LENGTH: 8192,
+    MAX_CONTEXT_LENGTH: 1048576
+  },
+  "gemini-2.0-flash-lite": {
+    MIN_TEMPERATURE: 0.0,
+    MAX_TEMPERATURE: 2.0,
+    MAX_TOKEN_OUTPUT_LENGTH: 8192,
+    MAX_CONTEXT_LENGTH: 1048576
+  },
+  "gemini-2.5-flash": {
+    MIN_TEMPERATURE: 0.0,
+    MAX_TEMPERATURE: 2.0,
+    MAX_TOKEN_OUTPUT_LENGTH: 65536,
+    MAX_CONTEXT_LENGTH: 1048576
+  },
+  "gemini-2.5-pro": {
+    MIN_TEMPERATURE: 0.0,
+    MAX_TEMPERATURE: 2.0,
+    MAX_TOKEN_OUTPUT_LENGTH: 65536,
+    MAX_CONTEXT_LENGTH: 1048576
+  },
   "gemini-1.5-flash": {
     MIN_TEMPERATURE: 0.0,
     MAX_TEMPERATURE: 1.0,
@@ -236,5 +267,26 @@ export const CHAT_SETTING_LIMITS: Record<LLMID, ChatSettingLimits> = {
     MAX_TEMPERATURE: 1.0,
     MAX_TOKEN_OUTPUT_LENGTH: 12000,
     MAX_CONTEXT_LENGTH: 12000
+  },
+
+  // STABILITY MODELS
+  "stability-video": {
+    MIN_TEMPERATURE: 0.0,
+    MAX_TEMPERATURE: 1.0,
+    MAX_TOKEN_OUTPUT_LENGTH: 4096, // TODO: verify (image/video generation model, prompt token limits)
+    MAX_CONTEXT_LENGTH: 4096 // TODO: verify
   }
 }
+
+export const CHAT_SETTING_LIMITS: Record<LLMID, ChatSettingLimits> = new Proxy(
+  RAW_CHAT_SETTING_LIMITS,
+  {
+    get(target, prop: string) {
+      if (typeof prop === "string" && prop in target) {
+        return target[prop as LLMID]
+      }
+      return DEFAULT_CHAT_SETTING_LIMITS
+    }
+  }
+)
+

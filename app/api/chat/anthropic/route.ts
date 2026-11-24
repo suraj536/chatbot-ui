@@ -66,7 +66,7 @@ export async function POST(request: NextRequest) {
         temperature: chatSettings.temperature,
         system: messages[0].content,
         max_tokens:
-          CHAT_SETTING_LIMITS[chatSettings.model].MAX_TOKEN_OUTPUT_LENGTH,
+          CHAT_SETTING_LIMITS[chatSettings.model]?.MAX_TOKEN_OUTPUT_LENGTH || 4096,
         stream: true
       })
 
