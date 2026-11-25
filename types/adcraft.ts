@@ -369,3 +369,216 @@ export const AdVisualResponseSchema = z.object({
 })
 
 export type AdVisualResponse = z.infer<typeof AdVisualResponseSchema>
+
+// ============================================================================
+// PHASE A3: ADVERTISEMENT COMPOSITION ENGINE CONTRACTS
+// ============================================================================
+
+export class AdCompositionError extends Error {
+  code: string
+
+  constructor(message: string, code = "COMPOSITION_FAILED") {
+    super(message)
+    this.name = "AdCompositionError"
+    this.code = code
+  }
+}
+
+export class AdLayoutError extends Error {
+  code: string
+
+  constructor(message: string, code = "LAYOUT_CALCULATION_FAILED") {
+    super(message)
+    this.name = "AdLayoutError"
+    this.code = code
+  }
+}
+
+// Validated Image Source (Data URLs or Blob URLs only; no arbitrary external endpoints)
+export const AdImageSourceSchema = z
+  .string({ required_error: "Image source is required" })
+  .trim()
+  .refine(
+    val => val.startsWith("data:image/") || val.startsWith("blob:"),
+    {
+      message: "Image source must be a valid data URL (data:image/...) or blob URL (blob:...)"
+    }
+  )
+
+// Validated Styling Configuration
+export const AdCompositionStylingSchema = z.object({
+  textPlacement: z
+    .enum(["top", "bottom", "left", "right", "center"] as const)
+    .default("bottom"),
+  productPlacement: z
+    .enum(["center", "right", "bottom", "floating"] as const)
+    .default("center"),
+  primaryColor: z
+    .string()
+    .regex(/^#([0-9a-fA-F]{3}|[0-9a-fA-F]{6})$/, "primaryColor must be a valid hex code (e.g. #000000)")
+    .default("#000000"),
+  accentColor: z
+    .string()
+    .regex(/^#([0-9a-fA-F]{3}|[0-9a-fA-F]{6})$/, "accentColor must be a valid hex code (e.g. #FF4500)")
+    .default("#FF4500"),
+  textColor: z.enum(["light", "dark"] as const).default("light")
+})
+
+export type AdCompositionStyling = z.infer<typeof AdCompositionStylingSchema>
+
+// ============================================================================
+// 7. COMPOSITION INPUT SCHEMA (Validated Parameters for Composition Engine)
+// ============================================================================
+export const AdCompositionInputSchema = z.object({
+  format: z
+    .enum(["square", "portrait", "story", "landscape"] as const, {
+      errorMap: () => ({
+        message: "Format must be one of: square, portrait, story, landscape"
+      })
+    })
+    .default("square"),
+
+  backgroundImage: AdImageSourceSchema,
+
+  productImage: AdImageSourceSchema,
+
+  logoImage: AdImageSourceSchema.optional(),
+
+  headline: z
+    .string({ required_error: "Headline is required" })
+    .trim()
+    .min(1, "Headline cannot be empty")
+    .max(150, "Headline too long"),
+
+  primaryText: z
+    .string({ required_error: "Primary text is required" })
+    .trim()
+    .min(1, "Primary text cannot be empty")
+    .max(600, "Primary text too long"),
+
+  description: z.string().trim().max(350).optional(),
+
+  callToAction: z
+    .string({ required_error: "Call to action is required" })
+    .trim()
+    .min(1, "Call to action cannot be empty")
+    .max(60, "Call to action too long"),
+
+  productName: z.string().trim().max(120).optional(),
+
+  brandName: z.string().trim().max(100).optional(),
+
+  price: z.string().trim().max(50).optional(),
+
+  offer: z.string().trim().max(100).optional(),
+
+  styling: AdCompositionStylingSchema.default({
+    textPlacement: "bottom",
+    productPlacement: "center",
+    primaryColor: "#000000",
+    accentColor: "#FF4500",
+    textColor: "light"
+  }),
+
+  outputFormat: z.enum(["png", "webp", "jpeg"] as const).default("png"),
+  quality: z.number().min(0.1).max(1.0).default(0.92)
+})
+
+export type AdCompositionInput = z.infer<typeof AdCompositionInputSchema>
+
+// ============================================================================
+// 8. LAYOUT CALCULATION & BOUNDING BOX TYPES (Pure Geometry for Renderer)
+// ============================================================================
+export interface Rect {
+  x: number
+  y: number
+  width: number
+  height: number
+}
+
+export interface AdSafeMargins {
+  top: number
+  right: number
+  bottom: number
+  left: number
+}
+
+export interface TextRegionLayout extends Rect {
+  fontSize: number
+  lineHeight: number
+  maxLines: number
+  align: "left" | "center" | "right"
+  color: string
+}
+
+export interface AdLayoutBoundingBoxes {
+  canvas: { width: number; height: number }
+  safeMargins: AdSafeMargins
+  background: {
+    sourceWidth: number
+    sourceHeight: number
+    destX: number
+    destY: number
+    destWidth: number
+    destHeight: number
+  }
+  scrim?: {
+    x: number
+    y: number
+    width: number
+    height: number
+    direction: "top-to-bottom" | "bottom-to-top" | "left-to-right" | "radial"
+  }
+  product: Rect & {
+    aspectRatio: number
+  }
+  logo?: Rect & {
+    aspectRatio: number
+  }
+  headline: TextRegionLayout
+  primaryText: TextRegionLayout
+  description?: TextRegionLayout
+  badge?: Rect & {
+    text: string
+    fontSize: number
+    backgroundColor: string
+    textColor: string
+    borderRadius: number
+  }
+  ctaButton: Rect & {
+    text: string
+    fontSize: number
+    backgroundColor: string
+    textColor: string
+    borderRadius: number
+  }
+}
+
+export interface AdComputedLayout {
+  format: AdFormatName
+  dimensions: { width: number; height: number }
+  safeMargins: AdSafeMargins
+  elements: AdLayoutBoundingBoxes
+  layerOrder: Array<
+    | "background"
+    | "scrim"
+    | "product"
+    | "logo"
+    | "headline"
+    | "primaryText"
+    | "description"
+    | "badge"
+    | "ctaButton"
+  >
+}
+
+// ============================================================================
+// 9. COMPOSITION OUTPUT CONTRACT
+// ============================================================================
+export interface AdCompositionOutput {
+  blob: Blob
+  dimensions: { width: number; height: number }
+  format: AdFormatName
+  mimeType: string
+  renderedAt: string
+}
