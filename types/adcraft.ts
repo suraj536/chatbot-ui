@@ -263,3 +263,109 @@ export const AdCopyResponseSchema = z.object({
 })
 
 export type AdCopyResponse = z.infer<typeof AdCopyResponseSchema>
+
+// ============================================================================
+// PHASE A2: STABILITY AI BACKGROUND VISUAL GENERATION CONTRACTS
+// ============================================================================
+
+// Supported Stability AI Visual Models
+export const SUPPORTED_STABILITY_MODELS = [
+  "stability-image-ultra",
+  "stability-image-core",
+  "stability-video"
+] as const
+
+export type SupportedStabilityModel = (typeof SUPPORTED_STABILITY_MODELS)[number]
+
+// Map of AdCraft Format to Stability AI Aspect Ratio
+export const AD_FORMAT_STABILITY_MAP: Record<AdFormatName, string> = {
+  square: "1:1",
+  portrait: "4:5",
+  story: "9:16",
+  landscape: "16:9" // Closest supported Stability aspect ratio to 1.91:1 banner
+}
+
+// ============================================================================
+// 4. VISUAL GENERATION REQUEST SCHEMA (Phase A2 Validated Input Contract)
+// ============================================================================
+export const AdVisualGenerationRequestSchema = z.object({
+  backgroundPrompt: z
+    .string({ required_error: "Background prompt is required" })
+    .trim()
+    .min(5, "Background prompt must be at least 5 characters")
+    .max(1000, "Background prompt cannot exceed 1000 characters"),
+
+  format: z
+    .enum(["square", "portrait", "story", "landscape"] as const, {
+      errorMap: () => ({
+        message: "Format must be one of: square, portrait, story, landscape"
+      })
+    })
+    .default("square"),
+
+  model: z
+    .enum(SUPPORTED_STABILITY_MODELS, {
+      errorMap: () => ({
+        message: `Model must be one of: ${SUPPORTED_STABILITY_MODELS.join(", ")}`
+      })
+    })
+    .optional(),
+
+  negativePrompt: z
+    .string()
+    .trim()
+    .max(500, "Negative prompt cannot exceed 500 characters")
+    .optional(),
+
+  seed: z
+    .number()
+    .int("Seed must be an integer")
+    .min(0, "Seed must be at least 0")
+    .max(4294967295, "Seed cannot exceed 4294967295")
+    .optional(),
+
+  workspaceId: z.string().uuid("Invalid workspace ID format").optional()
+})
+
+export type AdVisualGenerationRequest = z.infer<typeof AdVisualGenerationRequestSchema>
+
+// ============================================================================
+// 5. STRUCTURED STABILITY OUTPUT SCHEMA (Validated AI Image Result Contract)
+// ============================================================================
+export const GeneratedAdVisualSchema = z.object({
+  base64: z.string().min(1, "Base64 image string cannot be empty"),
+  dataUrl: z
+    .string()
+    .regex(/^data:image\/(webp|png|jpeg);base64,/, "Must be a valid base64 image data URL"),
+  format: z.enum(["webp", "png", "jpeg"]).default("webp"),
+  aspectRatio: z.string(),
+  finishReason: z.string(),
+  seed: z.number().optional()
+})
+
+export type GeneratedAdVisual = z.infer<typeof GeneratedAdVisualSchema>
+
+// ============================================================================
+// 6. VISUAL API RESPONSE SCHEMA (Standardized HTTP Contract for Phase A2)
+// ============================================================================
+export const AdVisualResponseSchema = z.object({
+  success: z.literal(true),
+  data: z.object({
+    image: GeneratedAdVisualSchema,
+    format: z.object({
+      name: z.string(),
+      label: z.string(),
+      width: z.number(),
+      height: z.number(),
+      aspectRatio: z.string(),
+      stabilityAspectRatio: z.string()
+    }),
+    metadata: z.object({
+      model: z.string(),
+      generatedAt: z.string(),
+      promptLength: z.number()
+    })
+  })
+})
+
+export type AdVisualResponse = z.infer<typeof AdVisualResponseSchema>
