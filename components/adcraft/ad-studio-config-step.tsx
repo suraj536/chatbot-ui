@@ -33,8 +33,10 @@ import {
   IconChevronDown,
   IconChevronUp,
   IconPhoto,
+  IconPlus,
   IconTrash,
-  IconUpload
+  IconUpload,
+  IconX
 } from "@tabler/icons-react"
 import { cn } from "@/lib/utils"
 
@@ -74,9 +76,29 @@ export const AdStudioConfigStep: FC<AdStudioConfigStepProps> = ({
   const [showAdvanced, setShowAdvanced] = useState(false)
   const [isDraggingProduct, setIsDraggingProduct] = useState(false)
   const [isDraggingLogo, setIsDraggingLogo] = useState(false)
+  const [featureInputText, setFeatureInputText] = useState("")
 
   const productFileInputRef = useRef<HTMLInputElement>(null)
   const logoFileInputRef = useRef<HTMLInputElement>(null)
+
+  const handleAddFeature = () => {
+    const trimmed = featureInputText.trim()
+    if (!trimmed) return
+    if (config.productFeatures.length >= 10) return
+    const isDuplicate = config.productFeatures.some(
+      f => f.trim().toLowerCase() === trimmed.toLowerCase()
+    )
+    if (isDuplicate) return
+    onConfigChange("productFeatures", [...config.productFeatures, trimmed])
+    setFeatureInputText("")
+  }
+
+  const handleRemoveFeature = (indexToRemove: number) => {
+    onConfigChange(
+      "productFeatures",
+      config.productFeatures.filter((_, i) => i !== indexToRemove)
+    )
+  }
 
   // Product drag and drop handlers
   const handleProductDrop = async (e: React.DragEvent<HTMLDivElement>) => {
@@ -554,6 +576,69 @@ export const AdStudioConfigStep: FC<AdStudioConfigStepProps> = ({
                   maxLength={80}
                   onChange={e => onConfigChange("campaignObjective", e.target.value)}
                 />
+              </div>
+
+              {/* Product Features */}
+              <div className="space-y-2 sm:col-span-2">
+                <div className="flex items-center justify-between">
+                  <Label htmlFor="featureInput">Key Product Features (Optional)</Label>
+                  <span className="text-muted-foreground text-xs">
+                    {config.productFeatures.length}/10 features
+                  </span>
+                </div>
+                <div className="flex gap-2">
+                  <Input
+                    id="featureInput"
+                    placeholder="e.g., 40-hour battery life with fast charging"
+                    value={featureInputText}
+                    maxLength={200}
+                    disabled={config.productFeatures.length >= 10}
+                    onChange={e => setFeatureInputText(e.target.value)}
+                    onKeyDown={e => {
+                      if (e.key === "Enter") {
+                        e.preventDefault()
+                        handleAddFeature()
+                      }
+                    }}
+                  />
+                  <Button
+                    type="button"
+                    variant="outline"
+                    onClick={handleAddFeature}
+                    disabled={!featureInputText.trim() || config.productFeatures.length >= 10}
+                    className="shrink-0"
+                  >
+                    <IconPlus className="mr-1 size-4" />
+                    Add
+                  </Button>
+                </div>
+                {config.productFeatures.length > 0 && (
+                  <div className="flex flex-wrap gap-2 pt-1">
+                    {config.productFeatures.map((feat, index) => (
+                      <Badge
+                        key={index}
+                        variant="secondary"
+                        className="gap-1.5 py-1 pl-2.5 pr-1.5 text-xs font-normal"
+                      >
+                        <span className="max-w-[280px] truncate">{feat}</span>
+                        <button
+                          type="button"
+                          onClick={() => handleRemoveFeature(index)}
+                          className="hover:bg-muted text-muted-foreground hover:text-foreground rounded-full p-0.5"
+                          title="Remove feature"
+                        >
+                          <IconX className="size-3" />
+                        </button>
+                      </Badge>
+                    ))}
+                  </div>
+                )}
+                {validationErrors.productFeatures && (
+                  <p className="text-destructive flex items-center gap-1 text-xs">
+                    <IconAlertCircle className="size-3.5" />
+                    {validationErrors.productFeatures}
+                  </p>
+                )}
               </div>
             </div>
           </CardContent>

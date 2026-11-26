@@ -6,6 +6,7 @@ import { ChatbotUIContext } from "@/context/context"
 import { AD_FORMATS } from "@/types/adcraft"
 import { useAdStudio } from "@/lib/adcraft/use-ad-studio"
 import { AdStudioConfigStep } from "./ad-studio-config-step"
+import { AdStudioCopyStep } from "./ad-studio-copy-step"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
 import {
@@ -40,11 +41,20 @@ export const AdStudio: FC<AdStudioProps> = ({ workspaceId }) => {
     productImage,
     logoImage,
     validationErrors,
+    generatedCopy,
+    editableCopy,
+    isGeneratingCopy,
+    copyGenerationError,
+    isCopyStale,
     handleConfigChange,
     handleProductImageSelect,
     handleProductImageRemove,
     handleLogoImageSelect,
     handleLogoImageRemove,
+    handleGenerateCopy,
+    handleCopyFieldChange,
+    handleSelectHeadlineAlternative,
+    handleSelectCopyAlternative,
     handleNextStep,
     handlePrevStep,
     goToStep
@@ -66,8 +76,8 @@ export const AdStudio: FC<AdStudioProps> = ({ workspaceId }) => {
       title: "Ad Copy Generation",
       description: "Gemini structured copy & prompts",
       icon: IconFileText,
-      status: currentStep === 2 ? "current" : currentStep > 2 ? "completed" : "pending",
-      badge: "Phase A4.2"
+      status: currentStep === 2 ? "current" : generatedCopy ? "completed" : "pending",
+      badge: generatedCopy ? (isCopyStale ? "Outdated" : "Generated") : undefined
     },
     {
       number: 3,
@@ -201,38 +211,21 @@ export const AdStudio: FC<AdStudioProps> = ({ workspaceId }) => {
           )}
 
           {currentStep === 2 && (
-            <Card className="border-dashed">
-              <CardHeader>
-                <div className="flex items-center justify-between">
-                  <Badge variant="secondary">Upcoming Milestone</Badge>
-                  <Button variant="ghost" size="sm" onClick={handlePrevStep}>
-                    <IconArrowLeft className="mr-1 size-3.5" />
-                    Back to Configuration
-                  </Button>
-                </div>
-                <CardTitle className="mt-2 text-xl">
-                  Step 2: AI Advertising Copy Generation
-                </CardTitle>
-                <CardDescription>
-                  This milestone connects your product parameters to Google Gemini to generate validated ad headlines, body copy, visual descriptions, and background diffusion prompts.
-                </CardDescription>
-              </CardHeader>
-              <CardContent className="space-y-4">
-                <div className="bg-muted/40 rounded-lg border p-4 text-sm">
-                  <p className="font-medium">Configured Parameters:</p>
-                  <ul className="text-muted-foreground mt-2 list-inside list-disc space-y-1 text-xs">
-                    <li>Product Name: <span className="text-foreground">{config.productName}</span></li>
-                    <li>Platform: <span className="text-foreground capitalize">{config.platform}</span></li>
-                    <li>Tone: <span className="text-foreground capitalize">{config.tone}</span></li>
-                    <li>Format: <span className="text-foreground">{currentFormat.label}</span></li>
-                    <li>Product Image: <span className="text-foreground">{productImage.file ? productImage.name : "None uploaded"}</span></li>
-                  </ul>
-                </div>
-                <p className="text-muted-foreground text-xs italic">
-                  Note: Integrated copy generation will be wired in Phase A4.2.
-                </p>
-              </CardContent>
-            </Card>
+            <AdStudioCopyStep
+              workspaceId={workspaceId}
+              config={config}
+              generatedCopy={generatedCopy}
+              editableCopy={editableCopy}
+              isGeneratingCopy={isGeneratingCopy}
+              copyGenerationError={copyGenerationError}
+              isCopyStale={isCopyStale}
+              onCopyFieldChange={handleCopyFieldChange}
+              onSelectHeadlineAlternative={handleSelectHeadlineAlternative}
+              onSelectCopyAlternative={handleSelectCopyAlternative}
+              onGenerateCopy={() => handleGenerateCopy(workspaceId)}
+              onPrevStep={handlePrevStep}
+              onNextStep={handleNextStep}
+            />
           )}
 
           {currentStep === 3 && (
@@ -402,17 +395,31 @@ export const AdStudio: FC<AdStudioProps> = ({ workspaceId }) => {
                             : "items-center"
                         )}
                       >
-                        {/* Product Name Display */}
+                        {/* Product Name / Generated Headline Display */}
                         <p
                           className={cn(
-                            "line-clamp-1 font-semibold",
+                            "font-semibold",
                             isLandscape
-                              ? "max-w-[140px] text-xs"
-                              : "mt-3 max-w-[220px] text-xs"
+                              ? "line-clamp-1 max-w-[140px] text-xs"
+                              : "mt-3 line-clamp-2 max-w-[220px] text-xs"
                           )}
                         >
-                          {config.productName || "Product Title"}
+                          {editableCopy.headline || config.productName || "Product Title"}
                         </p>
+
+                        {/* Description / Primary Text Snippet if present */}
+                        {(editableCopy.description || editableCopy.primaryText) && (
+                          <p
+                            className={cn(
+                              "text-muted-foreground line-clamp-2",
+                              isLandscape
+                                ? "mt-0.5 max-w-[140px] text-[9px]"
+                                : "mt-1 max-w-[220px] text-[10px]"
+                            )}
+                          >
+                            {editableCopy.description || editableCopy.primaryText}
+                          </p>
+                        )}
 
                         {/* Price tag if present */}
                         {config.price && (
@@ -427,7 +434,7 @@ export const AdStudio: FC<AdStudioProps> = ({ workspaceId }) => {
                         )}
 
                         {/* Call to action mockup */}
-                        {config.callToAction && (
+                        {(editableCopy.callToAction || config.callToAction) && (
                           <div
                             className={cn(
                               "bg-primary text-primary-foreground shadow-xs rounded font-semibold",
@@ -436,7 +443,7 @@ export const AdStudio: FC<AdStudioProps> = ({ workspaceId }) => {
                                 : "mt-2 px-2.5 py-1 text-[10px]"
                             )}
                           >
-                            {config.callToAction}
+                            {editableCopy.callToAction || config.callToAction}
                           </div>
                         )}
                       </div>
@@ -471,6 +478,19 @@ export const AdStudio: FC<AdStudioProps> = ({ workspaceId }) => {
                       {currentFormat.recommendedFor.join(", ")}
                     </span>
                   </div>
+                  {generatedCopy && (
+                    <div className="text-muted-foreground mt-1.5 flex items-center justify-between">
+                      <span>AI Copy Status</span>
+                      <span
+                        className={cn(
+                          "font-medium",
+                          isCopyStale ? "text-amber-500" : "text-green-500"
+                        )}
+                      >
+                        {isCopyStale ? "Outdated (Step 1 Modified)" : "Generated & Synced"}
+                      </span>
+                    </div>
+                  )}
                 </div>
               </CardContent>
             </Card>
