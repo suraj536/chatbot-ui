@@ -7,6 +7,7 @@ import { AD_FORMATS } from "@/types/adcraft"
 import { useAdStudio } from "@/lib/adcraft/use-ad-studio"
 import { AdStudioConfigStep } from "./ad-studio-config-step"
 import { AdStudioCopyStep } from "./ad-studio-copy-step"
+import { AdStudioVisualStep } from "./ad-studio-visual-step"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
 import {
@@ -17,13 +18,15 @@ import {
   CardTitle
 } from "@/components/ui/card"
 import {
+  IconAlertCircle,
   IconArrowLeft,
   IconCheck,
   IconFileText,
   IconPhoto,
   IconPalette,
   IconSparkles,
-  IconLayersIntersect
+  IconLayersIntersect,
+  IconX
 } from "@tabler/icons-react"
 import { cn } from "@/lib/utils"
 
@@ -41,11 +44,24 @@ export const AdStudio: FC<AdStudioProps> = ({ workspaceId }) => {
     productImage,
     logoImage,
     validationErrors,
+    navigationError,
     generatedCopy,
     editableCopy,
     isGeneratingCopy,
     copyGenerationError,
     isCopyStale,
+    visualModel,
+    negativePrompt,
+    visualSeed,
+    generatedBackgrounds,
+    selectedBackground,
+    isGeneratingVisual,
+    visualGenerationError,
+    visualFieldErrors,
+    isVisualPromptStale,
+    isVisualFormatStale,
+    isVisualStale,
+    staleVisualAcknowledged,
     handleConfigChange,
     handleProductImageSelect,
     handleProductImageRemove,
@@ -55,13 +71,26 @@ export const AdStudio: FC<AdStudioProps> = ({ workspaceId }) => {
     handleCopyFieldChange,
     handleSelectHeadlineAlternative,
     handleSelectCopyAlternative,
+    handleGenerateVisual,
+    handleBackgroundPromptChange,
+    handleVisualModelChange,
+    handleNegativePromptChange,
+    handleVisualSeedChange,
+    handleSelectBackground,
+    handleRevertPromptToSelected,
+    handleAcknowledgeStaleVisual,
     handleNextStep,
     handlePrevStep,
-    goToStep
+    goToStep,
+    clearNavigationError
   } = useAdStudio()
 
   const currentFormat = AD_FORMATS[config.format]
   const isLandscape = config.format === "landscape"
+  const showNavigationAlert =
+    Boolean(navigationError) &&
+    !(currentStep === 2 && navigationError === copyGenerationError) &&
+    !(currentStep === 3 && navigationError === visualGenerationError)
 
   const steps = [
     {
@@ -84,8 +113,12 @@ export const AdStudio: FC<AdStudioProps> = ({ workspaceId }) => {
       title: "Background Generation",
       description: "Stability AI visual rendering",
       icon: IconPhoto,
-      status: currentStep === 3 ? "current" : currentStep > 3 ? "completed" : "pending",
-      badge: "Phase A4.3"
+      status: currentStep === 3 ? "current" : selectedBackground ? "completed" : "pending",
+      badge: selectedBackground
+        ? isVisualStale
+          ? "Outdated"
+          : "Generated"
+        : undefined
     },
     {
       number: 4,
@@ -142,54 +175,99 @@ export const AdStudio: FC<AdStudioProps> = ({ workspaceId }) => {
       </div>
 
       {/* Stepper Header */}
-      <div className="mb-8 grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4">
-        {steps.map(step => {
-          const Icon = step.icon
-          const isCurrent = step.status === "current"
-          const isCompleted = step.status === "completed"
+      <nav aria-label="Advertisement Studio progress" className="mb-8">
+        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4">
+          {steps.map(step => {
+            const Icon = step.icon
+            const isCurrent = step.status === "current"
+            const isCompleted = step.status === "completed"
+            const isNavigable =
+              step.number === 1 ||
+              isCompleted ||
+              (step.number === 3 && Boolean(generatedCopy)) ||
+              (step.number === 4 && Boolean(selectedBackground))
 
-          return (
-            <div
-              key={step.number}
-              onClick={() => {
-                if (step.number === 1 || isCompleted) {
-                  goToStep(step.number)
-                }
-              }}
-              className={cn(
-                "relative flex items-center gap-3 rounded-lg border p-3 transition-colors",
-                isCurrent && "border-primary bg-primary/5 shadow-sm",
-                isCompleted && "border-border bg-muted/20 hover:border-primary/40 cursor-pointer",
-                !isCurrent && !isCompleted && "border-border/60 bg-muted/10 opacity-70"
-              )}
-            >
-              <div
+            return (
+              <button
+                key={step.number}
+                type="button"
+                disabled={!isNavigable}
+                aria-current={isCurrent ? "step" : undefined}
+                onClick={() => {
+                  if (isNavigable) {
+                    goToStep(step.number)
+                  }
+                }}
                 className={cn(
-                  "flex size-9 shrink-0 items-center justify-center rounded-full text-xs font-semibold",
-                  isCurrent && "bg-primary text-primary-foreground",
-                  isCompleted && "bg-primary/20 text-primary",
-                  !isCurrent && !isCompleted && "bg-muted text-muted-foreground"
+                  "focus-visible:ring-ring focus-visible:ring-offset-background relative flex items-center gap-3 rounded-lg border p-3 text-left transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-70",
+                  isCurrent && "border-primary bg-primary/5 shadow-sm",
+                  isCompleted && "border-border bg-muted/20 hover:border-primary/40 cursor-pointer",
+                  !isCurrent &&
+                    !isCompleted &&
+                    isNavigable &&
+                    "border-border/60 bg-muted/10 hover:border-primary/40 cursor-pointer",
+                  !isCurrent &&
+                    !isCompleted &&
+                    !isNavigable &&
+                    "border-border/60 bg-muted/10"
                 )}
               >
-                {isCompleted ? <IconCheck className="size-4" /> : <Icon className="size-4" />}
-              </div>
-              <div className="min-w-0 flex-1">
-                <div className="flex items-center gap-1.5">
-                  <p className="truncate text-xs font-semibold leading-none">{step.title}</p>
-                  {step.badge && (
-                    <Badge variant="secondary" className="h-4 px-1 text-[10px] font-normal">
-                      {step.badge}
-                    </Badge>
+                <div
+                  className={cn(
+                    "flex size-9 shrink-0 items-center justify-center rounded-full text-xs font-semibold",
+                    isCurrent && "bg-primary text-primary-foreground",
+                    isCompleted && "bg-primary/20 text-primary",
+                    !isCurrent && !isCompleted && "bg-muted text-muted-foreground"
                   )}
+                >
+                  {isCompleted ? <IconCheck className="size-4" /> : <Icon className="size-4" />}
                 </div>
-                <p className="text-muted-foreground mt-1 truncate text-[11px]">
-                  {step.description}
-                </p>
-              </div>
+                <div className="min-w-0 flex-1">
+                  <div className="flex items-center gap-1.5">
+                    <p className="truncate text-xs font-semibold leading-none">
+                      <span className="sr-only">Step {step.number}: </span>
+                      {step.title}
+                    </p>
+                    {step.badge && (
+                      <Badge variant="secondary" className="h-4 px-1 text-[10px] font-normal">
+                        {step.badge}
+                      </Badge>
+                    )}
+                  </div>
+                  <p className="text-muted-foreground mt-1 truncate text-[11px]">
+                    {step.description}
+                  </p>
+                </div>
+              </button>
+            )
+          })}
+        </div>
+      </nav>
+
+      {showNavigationAlert && (
+        <div
+          role="alert"
+          className="border-destructive/40 bg-destructive/10 text-destructive mb-6 flex items-start justify-between gap-3 rounded-lg border p-3.5 text-xs"
+        >
+          <div className="flex items-start gap-2.5">
+            <IconAlertCircle className="mt-0.5 size-4 shrink-0" />
+            <div>
+              <p className="font-semibold">Cannot Change Studio Step</p>
+              <p className="text-muted-foreground mt-0.5">{navigationError}</p>
             </div>
-          )
-        })}
-      </div>
+          </div>
+          <Button
+            type="button"
+            variant="ghost"
+            size="icon"
+            onClick={clearNavigationError}
+            aria-label="Dismiss navigation error"
+            className="text-destructive hover:bg-destructive/15 size-6 shrink-0"
+          >
+            <IconX className="size-3.5" />
+          </Button>
+        </div>
+      )}
 
       {/* Main Studio Two-Column Grid */}
       <div className="grid grid-cols-1 gap-8 lg:grid-cols-12">
@@ -229,28 +307,33 @@ export const AdStudio: FC<AdStudioProps> = ({ workspaceId }) => {
           )}
 
           {currentStep === 3 && (
-            <Card className="border-dashed">
-              <CardHeader>
-                <div className="flex items-center justify-between">
-                  <Badge variant="secondary">Upcoming Milestone</Badge>
-                  <Button variant="ghost" size="sm" onClick={() => goToStep(1)}>
-                    <IconArrowLeft className="mr-1 size-3.5" />
-                    Back to Configuration
-                  </Button>
-                </div>
-                <CardTitle className="mt-2 text-xl">
-                  Step 3: Background Visual Generation
-                </CardTitle>
-                <CardDescription>
-                  This milestone connects the AI background prompt generated by Gemini to Stability AI Ultra/Core to produce a high-resolution diffusion background visual.
-                </CardDescription>
-              </CardHeader>
-              <CardContent>
-                <p className="text-muted-foreground text-xs italic">
-                  Note: Integrated visual generation will be wired in Phase A4.3.
-                </p>
-              </CardContent>
-            </Card>
+            <AdStudioVisualStep
+              workspaceId={workspaceId}
+              config={config}
+              backgroundPrompt={editableCopy.backgroundPrompt}
+              visualModel={visualModel}
+              negativePrompt={negativePrompt}
+              visualSeed={visualSeed}
+              generatedBackgrounds={generatedBackgrounds}
+              selectedBackground={selectedBackground}
+              isGeneratingVisual={isGeneratingVisual}
+              visualGenerationError={visualGenerationError}
+              visualFieldErrors={visualFieldErrors}
+              isVisualPromptStale={isVisualPromptStale}
+              isVisualFormatStale={isVisualFormatStale}
+              isVisualStale={isVisualStale}
+              staleVisualAcknowledged={staleVisualAcknowledged}
+              onBackgroundPromptChange={handleBackgroundPromptChange}
+              onVisualModelChange={handleVisualModelChange}
+              onNegativePromptChange={handleNegativePromptChange}
+              onVisualSeedChange={handleVisualSeedChange}
+              onGenerateVisual={() => handleGenerateVisual(workspaceId)}
+              onSelectBackground={handleSelectBackground}
+              onRevertPromptToSelected={handleRevertPromptToSelected}
+              onAcknowledgeStaleVisual={handleAcknowledgeStaleVisual}
+              onPrevStep={handlePrevStep}
+              onNextStep={handleNextStep}
+            />
           )}
 
           {currentStep === 4 && (
@@ -258,9 +341,9 @@ export const AdStudio: FC<AdStudioProps> = ({ workspaceId }) => {
               <CardHeader>
                 <div className="flex items-center justify-between">
                   <Badge variant="secondary">Upcoming Milestone</Badge>
-                  <Button variant="ghost" size="sm" onClick={() => goToStep(1)}>
+                  <Button variant="ghost" size="sm" onClick={handlePrevStep}>
                     <IconArrowLeft className="mr-1 size-3.5" />
-                    Back to Configuration
+                    Back to Background Generation
                   </Button>
                 </div>
                 <CardTitle className="mt-2 text-xl">
@@ -308,8 +391,20 @@ export const AdStudio: FC<AdStudioProps> = ({ workspaceId }) => {
                       config.format === "landscape" && "aspect-[1.91/1]"
                     )}
                   >
-                    {/* Background indicator */}
-                    <div className="from-muted/20 via-background to-muted/40 absolute inset-0 bg-gradient-to-b" />
+                    {/* Background indicator or generated Stability AI visual */}
+                    {selectedBackground ? (
+                      <>
+                        {/* eslint-disable-next-line @next/next/no-img-element */}
+                        <img
+                          src={selectedBackground.visual.dataUrl}
+                          alt="Generated ad background preview"
+                          className="absolute inset-0 size-full object-cover"
+                        />
+                        <div className="bg-background/60 absolute inset-0 backdrop-blur-[1px]" />
+                      </>
+                    ) : (
+                      <div className="from-muted/20 via-background to-muted/40 absolute inset-0 bg-gradient-to-b" />
+                    )}
 
                     {/* Logo thumbnail in corner if present */}
                     {logoImage.dataUrl && (
@@ -488,6 +583,21 @@ export const AdStudio: FC<AdStudioProps> = ({ workspaceId }) => {
                         )}
                       >
                         {isCopyStale ? "Outdated (Step 1 Modified)" : "Generated & Synced"}
+                      </span>
+                    </div>
+                  )}
+                  {selectedBackground && (
+                    <div className="text-muted-foreground mt-1.5 flex items-center justify-between">
+                      <span>AI Background Status</span>
+                      <span
+                        className={cn(
+                          "font-medium",
+                          isVisualStale ? "text-amber-500" : "text-green-500"
+                        )}
+                      >
+                        {isVisualStale
+                          ? "Outdated (Prompt/Format Changed)"
+                          : "Generated & Synced"}
                       </span>
                     </div>
                   )}

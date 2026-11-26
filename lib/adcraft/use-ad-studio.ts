@@ -1,4 +1,4 @@
-import { useState, useCallback, useRef } from "react"
+import { useState, useCallback, useRef, useEffect } from "react"
 import {
   AD_FORMATS,
   AD_PLATFORMS,
@@ -6,11 +6,29 @@ import {
   AdFormatName,
   AdPlatform,
   AdTone,
-  GeneratedAdCopy
+  GeneratedAdCopy,
+  GeneratedAdVisual,
+  SUPPORTED_STABILITY_MODELS,
+  SupportedStabilityModel
 } from "@/types/adcraft"
 
 export const MAX_FILE_SIZE_BYTES = 10 * 1024 * 1024 // 10MB
 export const ALLOWED_IMAGE_TYPES = ["image/png", "image/jpeg", "image/webp"]
+export const MIN_BACKGROUND_PROMPT_LENGTH = 10
+export const MAX_BACKGROUND_PROMPT_LENGTH = 700
+export const DEFAULT_VISUAL_MODEL: SupportedStabilityModel = "stability-image-ultra"
+export const MAX_BACKGROUND_HISTORY = 6
+export const MAX_STABILITY_SEED = 4294967295
+export const RASTER_IMAGE_DATA_URL_REGEX =
+  /^data:image\/(webp|png|jpeg);base64,[A-Za-z0-9+/]+={0,2}$/i
+
+/**
+ * Validates that a generated visual data URL is a non-empty base64-encoded raster image (webp, png, or jpeg).
+ */
+export function isValidRasterImageDataUrl(dataUrl: unknown): dataUrl is string {
+  if (typeof dataUrl !== "string") return false
+  return RASTER_IMAGE_DATA_URL_REGEX.test(dataUrl.trim())
+}
 
 export const CORE_CONFIG_FIELDS: (keyof AdStudioConfig)[] = [
   "productName",
@@ -57,17 +75,40 @@ export interface EditableAdCopy {
   backgroundPrompt: string
 }
 
+export interface GeneratedBackgroundItem {
+  id: string
+  visual: GeneratedAdVisual
+  promptUsed: string
+  negativePromptUsed: string
+  formatUsed: AdFormatName
+  modelUsed: SupportedStabilityModel
+  width: number
+  height: number
+  aspectRatio: string
+  stabilityAspectRatio: string
+  generatedAt: string
+}
+
 export interface AdStudioState {
   currentStep: number
   config: AdStudioConfig
   productImage: AdStudioAsset
   logoImage: AdStudioAsset
   validationErrors: Record<string, string>
+  navigationError: string | null
   generatedCopy: GeneratedAdCopy | null
   editableCopy: EditableAdCopy
   isGeneratingCopy: boolean
   copyGenerationError: string | null
   isCopyStale: boolean
+  visualModel: SupportedStabilityModel
+  negativePrompt: string
+  visualSeed: string
+  generatedBackgrounds: GeneratedBackgroundItem[]
+  selectedBackgroundId: string | null
+  isGeneratingVisual: boolean
+  visualGenerationError: string | null
+  staleVisualAcknowledged: boolean
 }
 
 export const initialStudioConfig: AdStudioConfig = {
@@ -256,15 +297,76 @@ export function validateConfigStep2(copy: EditableAdCopy): {
   const bgPrompt = copy.backgroundPrompt.trim()
   if (!bgPrompt) {
     errors.backgroundPrompt = "Background prompt is required"
-  } else if (bgPrompt.length < 10) {
-    errors.backgroundPrompt = "Background prompt must be at least 10 characters"
-  } else if (bgPrompt.length > 700) {
-    errors.backgroundPrompt = "Background prompt cannot exceed 700 characters"
+  } else if (bgPrompt.length < MIN_BACKGROUND_PROMPT_LENGTH) {
+    errors.backgroundPrompt = `Background prompt must be at least ${MIN_BACKGROUND_PROMPT_LENGTH} characters`
+  } else if (bgPrompt.length > MAX_BACKGROUND_PROMPT_LENGTH) {
+    errors.backgroundPrompt = `Background prompt cannot exceed ${MAX_BACKGROUND_PROMPT_LENGTH} characters`
   }
 
   return {
     valid: Object.keys(errors).length === 0,
     errors
+  }
+}
+
+export interface VisualStepValidationInput {
+  backgroundPrompt: string
+  visualModel?: SupportedStabilityModel | string
+  negativePrompt?: string
+  visualSeed?: string
+}
+
+/**
+ * Validates Step 3 Stability AI visual generation parameters.
+ * Uses the unified 10-700 background prompt bounds shared with Step 2 (within API schema 5-1000).
+ */
+export function validateConfigStep3(input: VisualStepValidationInput): {
+  valid: boolean
+  errors: Record<string, string>
+  parsedSeed?: number
+} {
+  const errors: Record<string, string> = {}
+
+  const bgPrompt = (input.backgroundPrompt ?? "").trim()
+  if (!bgPrompt) {
+    errors.backgroundPrompt = "Background prompt is required"
+  } else if (bgPrompt.length < MIN_BACKGROUND_PROMPT_LENGTH) {
+    errors.backgroundPrompt = `Background prompt must be at least ${MIN_BACKGROUND_PROMPT_LENGTH} characters`
+  } else if (bgPrompt.length > MAX_BACKGROUND_PROMPT_LENGTH) {
+    errors.backgroundPrompt = `Background prompt cannot exceed ${MAX_BACKGROUND_PROMPT_LENGTH} characters`
+  }
+
+  if (
+    input.visualModel !== undefined &&
+    !SUPPORTED_STABILITY_MODELS.includes(input.visualModel as SupportedStabilityModel)
+  ) {
+    errors.visualModel = `Model must be one of: ${SUPPORTED_STABILITY_MODELS.join(", ")}`
+  }
+
+  const negPrompt = (input.negativePrompt ?? "").trim()
+  if (negPrompt.length > 500) {
+    errors.negativePrompt = "Negative prompt cannot exceed 500 characters"
+  }
+
+  let parsedSeed: number | undefined
+  const rawSeed = (input.visualSeed ?? "").trim()
+  if (rawSeed !== "") {
+    if (!/^\d+$/.test(rawSeed)) {
+      errors.visualSeed = "Seed must be a non-negative whole integer"
+    } else {
+      const numericSeed = Number(rawSeed)
+      if (!Number.isSafeInteger(numericSeed) || numericSeed < 0 || numericSeed > MAX_STABILITY_SEED) {
+        errors.visualSeed = `Seed must be an integer between 0 and ${MAX_STABILITY_SEED}`
+      } else {
+        parsedSeed = numericSeed
+      }
+    }
+  }
+
+  return {
+    valid: Object.keys(errors).length === 0,
+    errors,
+    parsedSeed
   }
 }
 
@@ -287,6 +389,9 @@ export function useAdStudio(initialState?: Partial<AdStudioState>) {
   const [validationErrors, setValidationErrors] = useState<Record<string, string>>(
     initialState?.validationErrors ?? {}
   )
+  const [navigationError, setNavigationError] = useState<string | null>(
+    initialState?.navigationError ?? null
+  )
 
   // Step 2 Copy Generation & Editing state
   const [generatedCopy, setGeneratedCopy] = useState<GeneratedAdCopy | null>(
@@ -305,6 +410,34 @@ export function useAdStudio(initialState?: Partial<AdStudioState>) {
     initialState?.isCopyStale ?? false
   )
 
+  // Step 3 Visual Generation & Background Selection state
+  const [visualModel, setVisualModel] = useState<SupportedStabilityModel>(
+    initialState?.visualModel ?? DEFAULT_VISUAL_MODEL
+  )
+  const [negativePrompt, setNegativePrompt] = useState<string>(
+    initialState?.negativePrompt ?? ""
+  )
+  const [visualSeed, setVisualSeed] = useState<string>(
+    initialState?.visualSeed ?? ""
+  )
+  const [generatedBackgrounds, setGeneratedBackgrounds] = useState<GeneratedBackgroundItem[]>(
+    initialState?.generatedBackgrounds ?? []
+  )
+  const [selectedBackgroundId, setSelectedBackgroundId] = useState<string | null>(
+    initialState?.selectedBackgroundId ??
+      (initialState?.generatedBackgrounds?.[0]?.id ?? null)
+  )
+  const [isGeneratingVisual, setIsGeneratingVisual] = useState<boolean>(
+    initialState?.isGeneratingVisual ?? false
+  )
+  const [visualGenerationError, setVisualGenerationError] = useState<string | null>(
+    initialState?.visualGenerationError ?? null
+  )
+  const [visualFieldErrors, setVisualFieldErrors] = useState<Record<string, string>>({})
+  const [staleVisualAcknowledged, setStaleVisualAcknowledged] = useState<boolean>(
+    initialState?.staleVisualAcknowledged ?? false
+  )
+
   // Monotonic sequence counters for race condition prevention
   const productSelectionSeqRef = useRef<number>(0)
   const logoSelectionSeqRef = useRef<number>(0)
@@ -313,6 +446,48 @@ export function useAdStudio(initialState?: Partial<AdStudioState>) {
   const generatedCopyRef = useRef<GeneratedAdCopy | null>(
     initialState?.generatedCopy ?? null
   )
+  const visualGenerationSeqRef = useRef<number>(0)
+  const isGeneratingVisualRef = useRef<boolean>(false)
+  const visualAbortControllerRef = useRef<AbortController | null>(null)
+  const isMountedRef = useRef<boolean>(true)
+
+  const abortAndInvalidatePendingRequests = useCallback(() => {
+    productSelectionSeqRef.current++
+    logoSelectionSeqRef.current++
+    copyGenerationSeqRef.current++
+    visualGenerationSeqRef.current++
+    isGeneratingCopyRef.current = false
+    isGeneratingVisualRef.current = false
+    if (visualAbortControllerRef.current) {
+      visualAbortControllerRef.current.abort()
+      visualAbortControllerRef.current = null
+    }
+  }, [])
+
+  useEffect(() => {
+    isMountedRef.current = true
+    return () => {
+      isMountedRef.current = false
+      abortAndInvalidatePendingRequests()
+    }
+  }, [abortAndInvalidatePendingRequests])
+
+  // Derived Step 3 selection & staleness states
+  const selectedBackground =
+    generatedBackgrounds.find(bg => bg.id === selectedBackgroundId) ?? null
+  const generatedVisual = selectedBackground?.visual ?? null
+  const isVisualPromptStale = Boolean(
+    selectedBackground &&
+      selectedBackground.promptUsed.trim() !== editableCopy.backgroundPrompt.trim()
+  )
+  const isVisualFormatStale = Boolean(
+    selectedBackground && selectedBackground.formatUsed !== config.format
+  )
+  const isVisualStale = isVisualPromptStale || isVisualFormatStale
+
+  const clearNavigationError = useCallback(() => {
+    setNavigationError(null)
+  }, [])
 
   const handleConfigChange = useCallback(
     (field: keyof AdStudioConfig, value: any) => {
@@ -320,6 +495,7 @@ export function useAdStudio(initialState?: Partial<AdStudioState>) {
         ...prev,
         [field]: value
       }))
+      setNavigationError(null)
 
       // Clear validation error for this field if one was set
       setValidationErrors(prev => {
@@ -332,6 +508,10 @@ export function useAdStudio(initialState?: Partial<AdStudioState>) {
       // If copy was already generated and a core field is modified, mark copy as stale
       if (CORE_CONFIG_FIELDS.includes(field) && generatedCopyRef.current) {
         setIsCopyStale(true)
+      }
+
+      if (field === "format") {
+        setStaleVisualAcknowledged(false)
       }
     },
     []
@@ -481,6 +661,7 @@ export function useAdStudio(initialState?: Partial<AdStudioState>) {
       isGeneratingCopyRef.current = true
       setIsGeneratingCopy(true)
       setCopyGenerationError(null)
+      setNavigationError(null)
 
       try {
         const payload: Record<string, any> = {
@@ -554,6 +735,7 @@ export function useAdStudio(initialState?: Partial<AdStudioState>) {
           backgroundPrompt: copy.backgroundPrompt
         })
         setIsCopyStale(false)
+        setStaleVisualAcknowledged(false)
         setCurrentStep(2)
         return true
       } catch (err: any) {
@@ -579,11 +761,24 @@ export function useAdStudio(initialState?: Partial<AdStudioState>) {
         ...prev,
         [field]: value
       }))
+      setNavigationError(null)
       if (copyGenerationError) {
         setCopyGenerationError(null)
       }
+      if (field === "backgroundPrompt") {
+        setStaleVisualAcknowledged(false)
+        if (visualGenerationError) {
+          setVisualGenerationError(null)
+        }
+        setVisualFieldErrors(prev => {
+          if (!prev.backgroundPrompt) return prev
+          const next = { ...prev }
+          delete next.backgroundPrompt
+          return next
+        })
+      }
     },
-    [copyGenerationError]
+    [copyGenerationError, visualGenerationError]
   )
 
   const handleSelectHeadlineAlternative = useCallback((headline: string) => {
@@ -600,10 +795,318 @@ export function useAdStudio(initialState?: Partial<AdStudioState>) {
     }))
   }, [])
 
+  // Step 3 handlers
+  const validateStep3 = useCallback((): boolean => {
+    const { valid, errors } = validateConfigStep3({
+      backgroundPrompt: editableCopy.backgroundPrompt,
+      visualModel,
+      negativePrompt,
+      visualSeed
+    })
+    setVisualFieldErrors(errors)
+    if (!valid) {
+      const firstError = Object.values(errors)[0]
+      setVisualGenerationError(firstError)
+      return false
+    }
+    setVisualGenerationError(null)
+    return true
+  }, [editableCopy.backgroundPrompt, negativePrompt, visualModel, visualSeed])
+
+  const handleBackgroundPromptChange = useCallback(
+    (value: string) => {
+      setEditableCopy(prev => ({
+        ...prev,
+        backgroundPrompt: value
+      }))
+      setStaleVisualAcknowledged(false)
+      setNavigationError(null)
+      if (visualGenerationError) {
+        setVisualGenerationError(null)
+      }
+      if (copyGenerationError) {
+        setCopyGenerationError(null)
+      }
+      setVisualFieldErrors(prev => {
+        if (!prev.backgroundPrompt) return prev
+        const next = { ...prev }
+        delete next.backgroundPrompt
+        return next
+      })
+    },
+    [copyGenerationError, visualGenerationError]
+  )
+
+  const handleVisualModelChange = useCallback(
+    (model: SupportedStabilityModel) => {
+      setVisualModel(model)
+      if (visualGenerationError) {
+        setVisualGenerationError(null)
+      }
+      setVisualFieldErrors(prev => {
+        if (!prev.visualModel) return prev
+        const next = { ...prev }
+        delete next.visualModel
+        return next
+      })
+    },
+    [visualGenerationError]
+  )
+
+  const handleNegativePromptChange = useCallback(
+    (value: string) => {
+      setNegativePrompt(value)
+      if (visualGenerationError) {
+        setVisualGenerationError(null)
+      }
+      setVisualFieldErrors(prev => {
+        if (!prev.negativePrompt) return prev
+        const next = { ...prev }
+        delete next.negativePrompt
+        return next
+      })
+    },
+    [visualGenerationError]
+  )
+
+  const handleVisualSeedChange = useCallback(
+    (value: string) => {
+      setVisualSeed(value)
+      if (visualGenerationError) {
+        setVisualGenerationError(null)
+      }
+      setVisualFieldErrors(prev => {
+        if (!prev.visualSeed) return prev
+        const next = { ...prev }
+        delete next.visualSeed
+        return next
+      })
+    },
+    [visualGenerationError]
+  )
+
+  const handleSelectBackground = useCallback(
+    (id: string) => {
+      const exists = generatedBackgrounds.some(bg => bg.id === id)
+      if (!exists) return
+      setSelectedBackgroundId(id)
+      setStaleVisualAcknowledged(false)
+      setNavigationError(null)
+      if (visualGenerationError) {
+        setVisualGenerationError(null)
+      }
+    },
+    [generatedBackgrounds, visualGenerationError]
+  )
+
+  const handleRevertPromptToSelected = useCallback(() => {
+    if (!selectedBackground) return
+    setEditableCopy(prev => ({
+      ...prev,
+      backgroundPrompt: selectedBackground.promptUsed
+    }))
+    setStaleVisualAcknowledged(false)
+    setNavigationError(null)
+    setVisualGenerationError(null)
+    setVisualFieldErrors(prev => {
+      if (!prev.backgroundPrompt) return prev
+      const next = { ...prev }
+      delete next.backgroundPrompt
+      return next
+    })
+  }, [selectedBackground])
+
+  const handleAcknowledgeStaleVisual = useCallback(
+    (acknowledged: boolean) => {
+      setStaleVisualAcknowledged(acknowledged)
+      setNavigationError(null)
+      if (acknowledged && visualGenerationError) {
+        setVisualGenerationError(null)
+      }
+    },
+    [visualGenerationError]
+  )
+
+  const handleGenerateVisual = useCallback(
+    async (workspaceId?: string): Promise<boolean> => {
+      if (isGeneratingVisualRef.current) {
+        return false
+      }
+
+      const validation = validateConfigStep3({
+        backgroundPrompt: editableCopy.backgroundPrompt,
+        visualModel,
+        negativePrompt,
+        visualSeed
+      })
+      setVisualFieldErrors(validation.errors)
+      if (!validation.valid) {
+        const firstError = Object.values(validation.errors)[0]
+        setVisualGenerationError(firstError)
+        return false
+      }
+
+      const promptSnapshot = editableCopy.backgroundPrompt.trim()
+      const negativePromptSnapshot = negativePrompt.trim()
+      const formatSnapshot = config.format
+      const modelSnapshot = visualModel
+      const seedSnapshot = validation.parsedSeed
+
+      const seq = ++visualGenerationSeqRef.current
+      isGeneratingVisualRef.current = true
+      setIsGeneratingVisual(true)
+      setVisualGenerationError(null)
+      setNavigationError(null)
+
+      const controller =
+        typeof AbortController !== "undefined" ? new AbortController() : null
+      visualAbortControllerRef.current = controller
+
+      try {
+        const payload: Record<string, any> = {
+          backgroundPrompt: promptSnapshot,
+          format: formatSnapshot,
+          model: modelSnapshot
+        }
+
+        if (negativePromptSnapshot) {
+          payload.negativePrompt = negativePromptSnapshot
+        }
+        if (typeof seedSnapshot === "number") {
+          payload.seed = seedSnapshot
+        }
+        if (workspaceId) {
+          payload.workspaceId = workspaceId
+        }
+
+        const res = await fetch("/api/adcraft/generate-visual", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(payload),
+          ...(controller ? { signal: controller.signal } : {})
+        })
+
+        if (seq !== visualGenerationSeqRef.current) {
+          return false
+        }
+
+        let data: any = null
+        try {
+          data = await res.json()
+        } catch {
+          data = null
+        }
+
+        if (seq !== visualGenerationSeqRef.current) {
+          return false
+        }
+
+        if (!res.ok || !data?.success) {
+          const errMsg =
+            (typeof data?.message === "string" && data.message.trim()) ||
+            (typeof data?.error === "string" && data.error.trim()) ||
+            `Visual generation failed (${res.status})`
+          setVisualGenerationError(errMsg)
+          return false
+        }
+
+        const image: GeneratedAdVisual | undefined = data?.data?.image
+        if (
+          !image ||
+          typeof image.base64 !== "string" ||
+          !image.base64.trim() ||
+          !isValidRasterImageDataUrl(image.dataUrl)
+        ) {
+          setVisualGenerationError(
+            "Received an unexpected image response from the visual generation service. Please try again."
+          )
+          return false
+        }
+
+        const formatInfo = data?.data?.format
+        const metadataInfo = data?.data?.metadata
+        const formatFallback = AD_FORMATS[formatSnapshot]
+
+        const newItem: GeneratedBackgroundItem = {
+          id: `bg-${Date.now()}-${seq}`,
+          visual: image,
+          promptUsed: promptSnapshot,
+          negativePromptUsed: negativePromptSnapshot,
+          formatUsed: formatSnapshot,
+          modelUsed: (metadataInfo?.model as SupportedStabilityModel) || modelSnapshot,
+          width:
+            typeof formatInfo?.width === "number"
+              ? formatInfo.width
+              : formatFallback.width,
+          height:
+            typeof formatInfo?.height === "number"
+              ? formatInfo.height
+              : formatFallback.height,
+          aspectRatio:
+            typeof formatInfo?.aspectRatio === "string"
+              ? formatInfo.aspectRatio
+              : formatFallback.aspectRatio,
+          stabilityAspectRatio:
+            typeof formatInfo?.stabilityAspectRatio === "string"
+              ? formatInfo.stabilityAspectRatio
+              : image.aspectRatio,
+          generatedAt:
+            typeof metadataInfo?.generatedAt === "string"
+              ? metadataInfo.generatedAt
+              : new Date().toISOString()
+        }
+
+        setGeneratedBackgrounds(prev =>
+          [newItem, ...prev].slice(0, MAX_BACKGROUND_HISTORY)
+        )
+        setSelectedBackgroundId(newItem.id)
+        setStaleVisualAcknowledged(false)
+        setVisualGenerationError(null)
+        return true
+      } catch (err: any) {
+        if (seq !== visualGenerationSeqRef.current) {
+          return false
+        }
+        if (err?.name === "AbortError") {
+          setVisualGenerationError("Background generation was cancelled.")
+          return false
+        }
+        const msg =
+          typeof err?.message === "string" && err.message.trim()
+            ? err.message
+            : "Network error while generating background visual"
+        setVisualGenerationError(msg)
+        return false
+      } finally {
+        if (seq === visualGenerationSeqRef.current) {
+          isGeneratingVisualRef.current = false
+          visualAbortControllerRef.current = null
+          setIsGeneratingVisual(false)
+        }
+      }
+    },
+    [
+      config.format,
+      editableCopy.backgroundPrompt,
+      negativePrompt,
+      visualModel,
+      visualSeed
+    ]
+  )
+
   const handleNextStep = useCallback((): boolean => {
     if (currentStep === 1) {
-      const isValid = validateStep1()
-      if (!isValid) return false
+      const res1 = validateConfigStep1(config)
+      setValidationErrors(prev => ({
+        ...prev,
+        ...res1.errors
+      }))
+      if (!res1.valid) {
+        const msg = Object.values(res1.errors)[0] || "Please fix required Step 1 fields."
+        setNavigationError(msg)
+        return false
+      }
+      setNavigationError(null)
       setCurrentStep(2)
       return true
     }
@@ -611,24 +1114,123 @@ export function useAdStudio(initialState?: Partial<AdStudioState>) {
     if (currentStep === 2) {
       // Must have generated copy and pass validation to advance to Step 3
       if (!generatedCopy) {
-        setCopyGenerationError("Please generate ad copy before proceeding to background generation.")
+        const msg = "Please generate ad copy before proceeding to background generation."
+        setCopyGenerationError(msg)
+        setNavigationError(msg)
         return false
       }
-      const isValid = validateStep2()
-      if (!isValid) return false
+      const res1 = validateConfigStep1(config)
+      setValidationErrors(prev => ({
+        ...prev,
+        ...res1.errors
+      }))
+      if (!res1.valid) {
+        const msg = Object.values(res1.errors)[0] || "Please fix required Step 1 fields."
+        setNavigationError(msg)
+        return false
+      }
+      const res2 = validateConfigStep2(editableCopy)
+      if (!res2.valid) {
+        const msg = Object.values(res2.errors)[0]
+        setCopyGenerationError(msg)
+        setNavigationError(msg)
+        return false
+      }
+      setCopyGenerationError(null)
+      setNavigationError(null)
       setCurrentStep(3)
       return true
     }
 
+    if (currentStep === 3) {
+      if (isGeneratingVisualRef.current) {
+        setNavigationError("Please wait for background generation to finish before continuing.")
+        return false
+      }
+      const res1 = validateConfigStep1(config)
+      setValidationErrors(prev => ({
+        ...prev,
+        ...res1.errors
+      }))
+      if (!res1.valid) {
+        const msg = Object.values(res1.errors)[0] || "Please fix required Step 1 fields."
+        setVisualGenerationError(msg)
+        setNavigationError(msg)
+        return false
+      }
+      if (!generatedCopy) {
+        const msg = "Please generate ad copy before proceeding to composition."
+        setCopyGenerationError(msg)
+        setVisualGenerationError(msg)
+        setNavigationError(msg)
+        return false
+      }
+      const res3 = validateConfigStep3({
+        backgroundPrompt: editableCopy.backgroundPrompt,
+        visualModel,
+        negativePrompt,
+        visualSeed
+      })
+      setVisualFieldErrors(res3.errors)
+      if (!res3.valid) {
+        const msg = Object.values(res3.errors)[0]
+        setVisualGenerationError(msg)
+        setNavigationError(msg)
+        return false
+      }
+      const res2 = validateConfigStep2(editableCopy)
+      if (!res2.valid) {
+        const msg = Object.values(res2.errors)[0]
+        setCopyGenerationError(msg)
+        setVisualGenerationError(msg)
+        setNavigationError(msg)
+        return false
+      }
+      if (!selectedBackground) {
+        const msg = "Please generate a background image before proceeding to composition."
+        setVisualGenerationError(msg)
+        setNavigationError(msg)
+        return false
+      }
+      if ((isVisualPromptStale || isVisualFormatStale) && !staleVisualAcknowledged) {
+        const reasons: string[] = []
+        if (isVisualPromptStale) reasons.push("background prompt")
+        if (isVisualFormatStale) reasons.push("creative format")
+        const msg = `The ${reasons.join(" and ")} changed since this background was generated. Regenerate the background, revert the prompt, or confirm keeping the selected background.`
+        setVisualGenerationError(msg)
+        setNavigationError(msg)
+        return false
+      }
+      setCopyGenerationError(null)
+      setVisualGenerationError(null)
+      setNavigationError(null)
+      setCurrentStep(4)
+      return true
+    }
+
     if (currentStep < 4) {
+      setNavigationError(null)
       setCurrentStep(prev => prev + 1)
       return true
     }
 
     return true
-  }, [currentStep, generatedCopy, validateStep1, validateStep2])
+  }, [
+    config,
+    currentStep,
+    editableCopy,
+    generatedCopy,
+    isVisualFormatStale,
+    isVisualPromptStale,
+    negativePrompt,
+    selectedBackground,
+    staleVisualAcknowledged,
+    visualModel,
+    visualSeed
+  ])
 
   const handlePrevStep = useCallback(() => {
+    setNavigationError(null)
     if (currentStep > 1) {
       setCurrentStep(prev => prev - 1)
     }
@@ -637,52 +1239,164 @@ export function useAdStudio(initialState?: Partial<AdStudioState>) {
   const goToStep = useCallback(
     (step: number): boolean => {
       if (step === 1) {
+        setNavigationError(null)
         setCurrentStep(1)
         return true
       }
 
       if (step === 2) {
-        const isStep1Valid = validateStep1()
-        if (!isStep1Valid) return false
+        const res1 = validateConfigStep1(config)
+        setValidationErrors(prev => ({
+          ...prev,
+          ...res1.errors
+        }))
+        if (!res1.valid) {
+          const msg = Object.values(res1.errors)[0] || "Please fix required Step 1 fields."
+          setNavigationError(msg)
+          return false
+        }
+        setNavigationError(null)
         setCurrentStep(2)
         return true
       }
 
-      if (step > 2) {
-        const isStep1Valid = validateStep1()
-        if (!isStep1Valid) return false
-        if (!generatedCopy) {
-          setCopyGenerationError("Please generate ad copy before proceeding.")
+      if (step === 3) {
+        const res1 = validateConfigStep1(config)
+        setValidationErrors(prev => ({
+          ...prev,
+          ...res1.errors
+        }))
+        if (!res1.valid) {
+          const msg = Object.values(res1.errors)[0] || "Please fix required Step 1 fields."
+          setNavigationError(msg)
           return false
         }
-        const isStep2Valid = validateStep2()
-        if (!isStep2Valid) return false
-        setCurrentStep(Math.min(4, Math.max(1, step)))
+        if (!generatedCopy) {
+          const msg = "Please generate ad copy before proceeding."
+          setCopyGenerationError(msg)
+          setNavigationError(msg)
+          return false
+        }
+        const res2 = validateConfigStep2(editableCopy)
+        if (!res2.valid) {
+          const msg = Object.values(res2.errors)[0]
+          setCopyGenerationError(msg)
+          if (res2.errors.backgroundPrompt) {
+            setVisualFieldErrors(prev => ({
+              ...prev,
+              backgroundPrompt: res2.errors.backgroundPrompt
+            }))
+          }
+          setNavigationError(msg)
+          return false
+        }
+        setCopyGenerationError(null)
+        setNavigationError(null)
+        setCurrentStep(3)
+        return true
+      }
+
+      if (step === 4) {
+        if (isGeneratingVisualRef.current) {
+          setNavigationError("Please wait for background generation to finish before continuing.")
+          return false
+        }
+        const res1 = validateConfigStep1(config)
+        setValidationErrors(prev => ({
+          ...prev,
+          ...res1.errors
+        }))
+        if (!res1.valid) {
+          const msg = Object.values(res1.errors)[0] || "Please fix required Step 1 fields."
+          setNavigationError(msg)
+          return false
+        }
+        if (!generatedCopy) {
+          const msg = "Please generate ad copy before proceeding."
+          setCopyGenerationError(msg)
+          setNavigationError(msg)
+          return false
+        }
+        const res3 = validateConfigStep3({
+          backgroundPrompt: editableCopy.backgroundPrompt,
+          visualModel,
+          negativePrompt,
+          visualSeed
+        })
+        setVisualFieldErrors(res3.errors)
+        if (!res3.valid) {
+          const msg = Object.values(res3.errors)[0]
+          setVisualGenerationError(msg)
+          setNavigationError(msg)
+          return false
+        }
+        const res2 = validateConfigStep2(editableCopy)
+        if (!res2.valid) {
+          const msg = Object.values(res2.errors)[0]
+          setCopyGenerationError(msg)
+          setNavigationError(msg)
+          return false
+        }
+        if (!selectedBackground) {
+          const msg = "Please generate a background image before proceeding to composition."
+          setVisualGenerationError(msg)
+          setNavigationError(msg)
+          return false
+        }
+        if ((isVisualPromptStale || isVisualFormatStale) && !staleVisualAcknowledged) {
+          const msg =
+            "The background prompt or creative format changed since this background was generated. Regenerate, revert, or confirm keeping the selected background."
+          setVisualGenerationError(msg)
+          setNavigationError(msg)
+          return false
+        }
+        setCopyGenerationError(null)
+        setVisualGenerationError(null)
+        setNavigationError(null)
+        setCurrentStep(4)
         return true
       }
 
       return false
     },
-    [generatedCopy, validateStep1, validateStep2]
+    [
+      config,
+      editableCopy,
+      generatedCopy,
+      isVisualFormatStale,
+      isVisualPromptStale,
+      negativePrompt,
+      selectedBackground,
+      staleVisualAcknowledged,
+      visualModel,
+      visualSeed
+    ]
   )
 
   const reset = useCallback(() => {
-    productSelectionSeqRef.current++
-    logoSelectionSeqRef.current++
-    copyGenerationSeqRef.current++
-    isGeneratingCopyRef.current = false
+    abortAndInvalidatePendingRequests()
     generatedCopyRef.current = null
     setCurrentStep(1)
     setConfig(initialStudioConfig)
     setProductImage(initialAsset)
     setLogoImage(initialAsset)
     setValidationErrors({})
+    setNavigationError(null)
     setGeneratedCopy(null)
     setEditableCopy(initialEditableCopy)
     setIsGeneratingCopy(false)
     setCopyGenerationError(null)
     setIsCopyStale(false)
-  }, [])
+    setVisualModel(DEFAULT_VISUAL_MODEL)
+    setNegativePrompt("")
+    setVisualSeed("")
+    setGeneratedBackgrounds([])
+    setSelectedBackgroundId(null)
+    setIsGeneratingVisual(false)
+    setVisualGenerationError(null)
+    setVisualFieldErrors({})
+    setStaleVisualAcknowledged(false)
+  }, [abortAndInvalidatePendingRequests])
 
   return {
     currentStep,
@@ -690,12 +1404,28 @@ export function useAdStudio(initialState?: Partial<AdStudioState>) {
     productImage,
     logoImage,
     validationErrors,
+    navigationError,
     // Step 2 copy generation state
     generatedCopy,
     editableCopy,
     isGeneratingCopy,
     copyGenerationError,
     isCopyStale,
+    // Step 3 visual generation state
+    visualModel,
+    negativePrompt,
+    visualSeed,
+    generatedBackgrounds,
+    selectedBackgroundId,
+    selectedBackground,
+    generatedVisual,
+    isGeneratingVisual,
+    visualGenerationError,
+    visualFieldErrors,
+    isVisualPromptStale,
+    isVisualFormatStale,
+    isVisualStale,
+    staleVisualAcknowledged,
     // Step 1 handlers
     handleConfigChange,
     handleProductImageSelect,
@@ -709,10 +1439,21 @@ export function useAdStudio(initialState?: Partial<AdStudioState>) {
     handleSelectHeadlineAlternative,
     handleSelectCopyAlternative,
     validateStep2,
+    // Step 3 handlers
+    handleGenerateVisual,
+    handleBackgroundPromptChange,
+    handleVisualModelChange,
+    handleNegativePromptChange,
+    handleVisualSeedChange,
+    handleSelectBackground,
+    handleRevertPromptToSelected,
+    handleAcknowledgeStaleVisual,
+    validateStep3,
     // Navigation & lifecycle
     handleNextStep,
     handlePrevStep,
     goToStep,
+    clearNavigationError,
     reset
   }
 }
